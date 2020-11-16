@@ -1,0 +1,96 @@
+model Project
+  uses "mmxprs"
+
+  declarations
+    nodes=10
+    drones=4
+    N=1..(nodes+2)       !all nodes including starting and ending points
+    N1=2..(nodes+1)      !all customer nodes
+    P=1..drones      !number of drones
+    x: array(N) of mpvar   !truck nodes
+    y: array(N) of mpvar !drone nodes
+    A: array(N,N) of mpvar !truck route arcs
+    B: array(N,N,P) of mpvar !drone node arcs
+    d: array(N,N) of integer  ! distance betweenn nodes
+    u: array(N) of mpvar      !ordering for nodes
+  end-declarations
+
+    forall(i in N,j in N) do
+    A(i,j) is_binary
+    end-do
+    forall(i in N,j in N,k in P) do
+    B(i,j,k) is_binary
+  end-do
+
+
+  !data from external file
+  initializations from "distsample.txt"
+   d
+  end-initializations
+
+  !objective function definition
+  
+  obj:=sum(i in N,j in N) d(i,j)*10*A(i,j) + sum(k in P) sum(i in N,j in N) d(i,j)*6*B(i,j,k)
+
+  forall(i in N) x(i) is_binary
+  forall(i in N) y(i) is_binary
+  forall(i in N) u(i) is_integer
+
+!constraint for node visiting
+  forall(i in N) x(i)+y(i)=1
+  !sum(i in N) x(i)>=6 !truck visiting = N/p+1 + 2
+  x(1)=1      ! warehouse starting point
+  x(nodes+2)=1     ! warehouse ending point
+
+!constraints for incoming & outgoing for nodes
+  sum(j in N) A(1,j) = 1  !Outgoing for 1st node
+  sum(j in N) A(j,nodes+2)=1    !Incoming for 12th node
+  forall(i in N) A(i,1)=0   !Incoming for 1st node
+  forall(j in N) A(nodes+2,j)=0  !Outging for 12th node
+  forall(i in N1) sum(j in N) A(i,j)=1*x(i)  !Outgoing for all other nodes - only 1
+  forall(i in N1) sum(j in N) A(j,i)=1*x(i)  !Incoming for all other nodes - only 1
+  
+  forall(j in N1) (sum(i in N) A(i,j)) + (sum(i in N, k in P) B(i,j,k))=1  !Incoming for all other nodes - only 1
+
+  !constraints for arcs between truck nodes
+  forall(i in N) A(i,i)=0
+  forall(i in N) forall(k in P) B(i,i,k)=0
+
+!constraints for drone arcs for nodes
+ forall(i in N) sum(j in N) sum(k in P) B(i,j,k) <= drones*x(i)  !each truck node can send only some number drones
+ forall(j in N) sum(i in N) sum(k in P) B(i,j,k) = 1*y(j)
+ !forall(i in N) sum(j in N,k in P) B(i,j,k) < 0
+ forall(i in N,k in P) sum(j in N) B(i,j,k)<= 1
+!forall(j in N) sum(i in N) sum(k in P) B(i,j,k)=x(j)
+forall(j in N) forall(k in P) B(1,j,k)=0
+forall(j in N) forall(k in P) B(nodes+2,j,k)=0
+
+
+!Constraints for ordering nodes
+  u(1)=1
+  u(nodes+2)=sum(i in N) x(i)
+  forall(i in N) forall(j in N) u(j)>=u(i)+1-(100*(1-A(i,j)))
+
+
+!obj function
+  minimize(obj)
+
+!output
+  writeln("Optimal cost:",getobjval)
+  forall(i in N | getsol(x(i))>0) do
+   writeln("truck node ",i)
+  end-do
+  forall(j in N | getsol(y(j))>0) do
+   writeln("drone node ",j)
+  end-do
+  
+  forall(i in N,j in N| getsol(A(i,j))>0) do
+   writeln("truck arc used ",i," to ",j)
+  end-do
+  forall(i in N,j in N,k in P| getsol(B(i,j,k))>0) do
+   writeln("drone arc used ",i," to ",j," with drone ",k)
+  end-do
+
+
+end-model
+
